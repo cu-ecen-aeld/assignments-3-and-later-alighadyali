@@ -1,0 +1,11 @@
+alig@DESKTOP-IP3T66S:~/assignment-2-alighadyali/finder-app$ export CROSS_COMPILE=aarch64-none-linux-gnu-
+alig@DESKTOP-IP3T66S:~/assignment-2-alighadyali/finder-app$ make clean
+aarch64-none-linux-gnu-gcc
+rm -f *.o writer *.elf *.map
+alig@DESKTOP-IP3T66S:~/assignment-2-alighadyali/finder-app$ make
+aarch64-none-linux-gnu-gcc
+aarch64-none-linux-gnu-gcc    -c -o writer.o writer.c
+aarch64-none-linux-gnu-gcc   writer.o -o writer 
+alig@DESKTOP-IP3T66S:~/assignment-2-alighadyali/finder-app$ file writer
+writer: ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), dynamically linked, interpreter /lib/ld-linux-aarch64.so.1, for GNU/Linux 3.7.0, with debug_info, not stripped
+alig@DESKTOP-IP3T66S:~/assignment-2-alighadyali/finder-app$
