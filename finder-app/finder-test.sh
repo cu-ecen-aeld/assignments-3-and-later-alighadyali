@@ -2,6 +2,21 @@
 # Tester script for assignment 1 and assignment 2
 # Author: Siddhant Jajoo
 
+# refernced https://github.com/cu-ecen-aeld/assignments-3-and-later-ytkachenko83/blob/master/finder-app/finder-test.sh
+
+get_config() {
+	local filename=$1
+	local etc_config="/etc/finder-app/conf/${filename}"
+	local default_config="conf/${filename}"
+
+	if [ -f  $etc_config ]
+	then
+		echo "$etc_config"
+	else
+		echo "$default_config"
+	fi		
+}
+
 set -e
 set -u
 
@@ -9,7 +24,7 @@ NUMFILES=10
 WRITESTR=AELD_IS_FUN
 WRITEDIR=/tmp/aeld-data
 # username=$(cat conf/username.txt)
-username=$(cat  /etc/finder-app/conf/username.txt)
+username=$(cat $(get_config "username.txt"))
 
 if [ $# -lt 3 ]
 then
