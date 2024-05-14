@@ -9,6 +9,8 @@ OBJS := $(SRCS:.c=.o)
 
 TARGET = aesdsocket
 
+all: $(TARGET)
+
 # Rule to build the target
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) $^ -o $@
