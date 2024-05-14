@@ -1,16 +1,12 @@
 # Makefile
 
-# Compiler
-CC = gcc
+CC=$(CROSS_COMPILE)gcc
 # Compiler flags
 CFLAGS = -Wall -Wextra -I.
 
-# Source files
 SRCS := $(wildcard *.c)
-# Object files
 OBJS := $(SRCS:.c=.o)
 
-# Main target
 TARGET = aesdsocket
 
 # Rule to build the target
