@@ -6,6 +6,7 @@ CFLAGS = -Wall -Wextra -I.
 
 SRCS := $(wildcard *.c)
 OBJS := $(SRCS:.c=.o)
+LFLAGS := -lpthread
 
 TARGET = aesdsocket
 
@@ -13,7 +14,7 @@ all: $(TARGET)
 
 # Rule to build the target
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) $^ -o $@
+	$(CC) $(CFLAGS) $^ -o $@ $(LFLAGS)
 
 # Rule to compile source files
 %.o: %.c

@@ -5,6 +5,7 @@ static struct sigaction sig_action = {0};
 // Flag set by SIGTERM and SIGINT to notify functions to stop what they're doing
 // and exit.
 static bool terminate = false;
+static pthread_mutex_t fmutex;
 
 void signal_handler(int signo)
 {
@@ -33,6 +34,56 @@ int init_signal_handler()
         return -1;
     }
     syslog(LOG_USER, "Signal handler setup succeeded.");
+    return 0;
+}
+
+void timestamp_handler()
+{
+    while (true)
+    {
+        pthread_mutex_lock(&fmutex);
+        if (terminate)
+        {
+            pthread_mutex_unlock(&fmutex);
+            return;
+        }
+        FILE *dataFile = fopen(FILENAME, "a");
+        if (dataFile == NULL)
+        {
+            perror("fopen");
+            syslog(LOG_ERR, "Failed to open data file.");
+            pthread_mutex_unlock(&fmutex);
+            sleep(TIMESTAMP_DELAY);
+            continue;
+        }
+
+        time_t now = time(NULL);
+        struct tm *pTimeData = localtime(&now);
+        char timestamp[64];
+        strftime(
+            timestamp,
+            sizeof(timestamp),
+            "timestamp:%Y-%m-%d %H:%M:%S\n",
+            pTimeData);
+
+        fprintf(dataFile, "%s", timestamp);
+        fclose(dataFile);
+        pthread_mutex_unlock(&fmutex);
+
+        sleep(TIMESTAMP_DELAY);
+    }
+    return;
+}
+
+int init_timestamp_handler()
+{
+    pthread_t timestamp_thread;
+    if (pthread_create(
+            &timestamp_thread, NULL, (void *)timestamp_handler, NULL) < 0)
+    {
+        perror("Timestamp thread failed");
+        return -1;
+    }
     return 0;
 }
 
@@ -66,10 +117,12 @@ int send_file_contents_over_socket(socket_context *socket_context)
 
 int receive(socket_context *p_socket_context)
 {
+    pthread_mutex_lock(&fmutex);
     FILE *data_file = fopen(FILENAME, "a");
     if (!data_file)
     {
         syslog(LOG_ERR, "Unable to open file for writing.");
+        pthread_mutex_unlock(&fmutex);
         return -1;
     }
 
@@ -92,6 +145,7 @@ int receive(socket_context *p_socket_context)
 
     // Send back the contents of the file over the socket connection.
     send_file_contents_over_socket(p_socket_context);
+    pthread_mutex_unlock(&fmutex);
     return 0;
 }
 
@@ -105,6 +159,7 @@ int accept_connections(socket_context *p_socket_context)
             // and exit the function.
             return 0;
         }
+        pthread_t thread_id;
         *p_socket_context->p_sock_addr_storage_size =
             sizeof(*p_socket_context->p_sock_addr_storage);
         int accepted_connection_fd = accept(
@@ -121,7 +176,19 @@ int accept_connections(socket_context *p_socket_context)
             p_socket_context->p_accept_connection_fd = &accepted_connection_fd;
             syslog(LOG_USER, "Accepted connection.");
 
-            receive(p_socket_context);
+            if (pthread_create(
+                    &thread_id,
+                    NULL,
+                    (void *)receive,
+                    (socket_context *)p_socket_context) < 0)
+            {
+                perror("pthread_create");
+                syslog(
+                    LOG_ERR,
+                    "Unable to create thread while accepting connection.");
+                return -1;
+            }
+            pthread_join(thread_id, NULL);
         }
     }
     return 0;

@@ -117,6 +117,7 @@ int main(int argc, char *argv[])
         // Redirect fds to /dev/null
         int fd = open("/dev/null", O_WRONLY | O_CREAT, 0666);
         dup2(fd, 1);
+        init_timestamp_handler();
 
         // Begin accepting connections and data.
         accept_connections(p_socket_context);
@@ -140,6 +141,7 @@ int main(int argc, char *argv[])
     // Running interactively (not as a daemon).
     syslog(LOG_USER, "Running in interactive mode.");
 
+    init_timestamp_handler();
     // Begin accepting connections and data.
     accept_connections(p_socket_context);
     syslog(LOG_USER, "Closing connections and cleaning up.");
