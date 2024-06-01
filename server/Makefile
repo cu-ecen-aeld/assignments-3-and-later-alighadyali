@@ -1,20 +1,20 @@
 # Makefile
 
-CC := $(CROSS_COMPILE)gcc
+CC ?= $(CROSS_COMPILE)gcc
 # Compiler flags
-CFLAGS = -Wall -Wextra -I.
+CFLAGS ?= -Wall -Wextra -I.
 
 SRCS := $(wildcard *.c)
 OBJS := $(SRCS:.c=.o)
-LFLAGS := -lpthread
+LDFLAGS ?= -lpthread
 
-TARGET = aesdsocket
+TARGET ?= aesdsocket
 
 all: $(TARGET)
 
 # Rule to build the target
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) $^ -o $@ $(LFLAGS)
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Rule to compile source files
 %.o: %.c
