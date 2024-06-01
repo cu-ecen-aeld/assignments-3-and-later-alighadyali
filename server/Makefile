@@ -1,6 +1,6 @@
 # Makefile
 
-CC=$(CROSS_COMPILE)gcc
+CC := $(CROSS_COMPILE)gcc
 # Compiler flags
 CFLAGS = -Wall -Wextra -I.
 
