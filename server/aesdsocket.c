@@ -47,7 +47,7 @@ void timestamp_handler()
             pthread_mutex_unlock(&fmutex);
             return;
         }
-        FILE *dataFile = fopen(FILENAME, "a");
+        FILE *dataFile = fopen(DEVICEPATH, "w");
         if (dataFile == NULL)
         {
             perror("fopen");
@@ -87,70 +87,60 @@ int init_timestamp_handler()
     return 0;
 }
 
-int send_file_contents_over_socket(socket_context *socket_context)
+void *exchange_data(void *pConnFd)
 {
-    ssize_t bytes_read = 0;
-    FILE *data_file = fopen(FILENAME, "r");
-    if (!data_file)
-    {
-        syslog(LOG_ERR, "Error opening data file.");
-        return -1;
-    }
-
-    char buffer[BUFFERSIZE];
-    while ((bytes_read = fread(buffer, 1, sizeof(buffer), data_file)))
-    {
-        if ((send(
-                *socket_context->p_accept_connection_fd,
-                buffer,
-                bytes_read,
-                0)) != bytes_read)
-        {
-            syslog(
-                LOG_ERR, "Error sending file contents over socket connection.");
-            return -1;
-        }
-    }
-    fclose(data_file);
-    return 0;
-}
-
-int receive(socket_context *p_socket_context)
-{
+    int connectionFd = *((int *)pConnFd);
     pthread_mutex_lock(&fmutex);
-    FILE *data_file = fopen(FILENAME, "a");
-    if (!data_file)
+    FILE *dataFile = fopen(DEVICEPATH, "w");
+    if (!dataFile)
     {
         syslog(LOG_ERR, "Unable to open file for writing.");
         pthread_mutex_unlock(&fmutex);
-        return -1;
+        return 0;
     }
 
-    size_t bytes_received = 0;
+    size_t bytesReceived = 0;
     char buffer[BUFFERSIZE];
 
-    while ((bytes_received = recv(
-                *p_socket_context->p_accept_connection_fd,
-                buffer,
-                sizeof(buffer),
-                0)) > 0)
+    while ((bytesReceived = recv(connectionFd, buffer, sizeof(buffer), 0)) > 0)
     {
-        fwrite(buffer, 1, bytes_received, data_file);
-        if (memchr(buffer, '\n', bytes_received) != NULL)
+        fwrite(buffer, 1, bytesReceived, dataFile);
+        if (memchr(buffer, '\n', bytesReceived) != NULL)
         {
             break;
         }
     }
-    fclose(data_file);
+    fclose(dataFile);
 
-    // Send back the contents of the file over the socket connection.
-    send_file_contents_over_socket(p_socket_context);
+    // Send back the contents of the file to the client.
+    ssize_t bytesRead = 0;
+    dataFile = fopen(DEVICEPATH, "r");
+    if (!dataFile)
+    {
+        syslog(LOG_ERR, "Error opening data file.");
+        return 0;
+    }
+
+    // Reset buffer and start sending.
+    memset(buffer, 0, sizeof(buffer));
+    while ((bytesRead = fread(buffer, 1, sizeof(buffer), dataFile)))
+    {
+        if ((send(connectionFd, buffer, bytesRead, 0)) != bytesRead)
+        {
+            syslog(
+                LOG_ERR, "Error sending file contents over socket connection.");
+            return 0;
+        }
+    }
+    fclose(dataFile);
     pthread_mutex_unlock(&fmutex);
     return 0;
 }
 
-int accept_connections(socket_context *p_socket_context)
+int init_connection_handler(
+    int *p_socket_fd, struct sockaddr_storage *p_sock_addr_storage)
 {
+    socklen_t sockAddrStorageSize = sizeof(*p_sock_addr_storage);
     while (1)
     {
         if (terminate)
@@ -159,28 +149,23 @@ int accept_connections(socket_context *p_socket_context)
             // and exit the function.
             return 0;
         }
-        pthread_t thread_id;
-        *p_socket_context->p_sock_addr_storage_size =
-            sizeof(*p_socket_context->p_sock_addr_storage);
-        int accepted_connection_fd = accept(
-            *p_socket_context->p_socket_fd,
-            (struct sockaddr *)p_socket_context->p_sock_addr_storage,
-            p_socket_context->p_sock_addr_storage_size);
-        if (accepted_connection_fd == -1)
+
+        pthread_t threadId;
+        int connectionFd = accept(
+            *p_socket_fd,
+            (struct sockaddr *)p_sock_addr_storage,
+            &sockAddrStorageSize);
+        if (connectionFd == -1)
         {
-            syslog(LOG_ERR, "Error accepting connection.");
+            syslog(LOG_ERR, "Eroor accepting connection.");
             continue;
         }
         else
         {
-            p_socket_context->p_accept_connection_fd = &accepted_connection_fd;
             syslog(LOG_USER, "Accepted connection.");
 
             if (pthread_create(
-                    &thread_id,
-                    NULL,
-                    (void *)receive,
-                    (socket_context *)p_socket_context) < 0)
+                    &threadId, NULL, exchange_data, (void *)&connectionFd) < 0)
             {
                 perror("pthread_create");
                 syslog(
@@ -188,23 +173,69 @@ int accept_connections(socket_context *p_socket_context)
                     "Unable to create thread while accepting connection.");
                 return -1;
             }
-            pthread_join(thread_id, NULL);
+            pthread_join(threadId, NULL);
         }
     }
     return 0;
 }
 
-int cleanup(socket_context *p_socket_context)
+int daemonize(int *p_socket_fd, struct sockaddr_storage *p_sock_addr_storage)
 {
-    freeaddrinfo(p_socket_context->p_addr_info);
-    p_socket_context->p_addr_info = NULL;
-    p_socket_context->p_hints = NULL;
-    p_socket_context->p_sock_addr_storage = NULL;
-    p_socket_context->p_sock_addr_storage_size = NULL;
-    p_socket_context->p_socket_fd = NULL;
-    p_socket_context->p_accept_connection_fd = NULL;
+    pid_t pid = fork();
+    if (pid == -1)
+    {
+        syslog(LOG_ERR, "Unable to fork.");
+        perror("fork");
+        return -1;
+    }
+    else if (pid != 0)
+    {
+        syslog(LOG_USER, "Running in daemon mode.");
+        exit(EXIT_SUCCESS);
+    }
 
-    free(p_socket_context);
-    remove(FILENAME);
-    return 0;
+    // Create new session and process group.
+    if (setsid() == -1)
+    {
+        syslog(LOG_ERR, "setsid failed after fark.");
+        perror("setsid");
+        return -1;
+    }
+
+    // CHILD PROCESS STARTED
+    // Set the working directory of child processto the root directory.
+    if (chdir("/") == -1)
+    {
+        syslog(LOG_ERR, "chdir failed after fork.");
+        perror("chdir");
+        return -1;
+    }
+
+    // Redirect fds to /dev/null
+    int nullFd = open("/dev/null", O_WRONLY | O_CREAT, 0666);
+    dup2(nullFd, 1);
+
+    // Start the timestamp thread.
+    // initTimestampHandler();
+
+    // Begin accepting connections and exchanging data.
+    initConnectionHandler(p_socket_fd, p_sock_addr_storage);
+
+    // After the program is done accepting connections (i.e. after a term signal
+    // is received, start cleaning up.
+    syslog(LOG_USER, "Closing connections and cleaning up.");
+    // remove(FILENAME);
+
+    if (nullFd != -1)
+    {
+        close(nullFd);
+    }
+
+    if (*p_socket_fd != -1)
+    {
+        close(*p_socket_fd);
+    }
+
+    closelog();
+    exit(EXIT_SUCCESS);
 }

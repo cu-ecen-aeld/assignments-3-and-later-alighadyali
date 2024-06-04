@@ -15,10 +15,11 @@
 #include <unistd.h>
 #include <pthread.h>
 
-#define PORT       "9000"
-#define BACKLOG    10
-#define FILENAME   "/tmp/aesdsocketdata"
-#define BUFFERSIZE 1024
+#define PORT            "9000"
+#define BACKLOG         10
+#define FILENAME        "/tmp/aesdsocketdata"
+#define DEVICEPATH      "/dev/aesdchar"
+#define BUFFERSIZE      1024
 #define TIMESTAMP_DELAY 10
 
 // pointers to file descriptors, structs and vars for socket management.
@@ -34,9 +35,9 @@ typedef struct
 
 void signal_handler(int signo);
 int init_signal_handler();
-int send_file_contents_over_socket(socket_context *socket_context);
-int accept_connections(socket_context *p_socket_context);
-int receive(socket_context *p_socket_context);
-int cleanup(socket_context *p_socket_context);
+int init_connection_handler(
+    int *p_socket_fd, struct sockaddr_storage *p_sock_addr_storage);
+void *exchange_data(void *pConnFd);
+int daemonize(int *p_socket_fd, struct sockaddr_storage *p_sock_addr_storage);
 void timestamp_handler();
 int init_timestamp_handler();
