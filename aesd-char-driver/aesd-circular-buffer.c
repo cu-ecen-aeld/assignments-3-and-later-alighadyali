@@ -35,44 +35,21 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(
     size_t char_offset,
     size_t *entry_offset_byte_rtn)
 {
-    // uint8_t offs = buffer->in_offs;
-    // for (int i = 0; i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++)
-    // {
-    //     if (char_offset < buffer->entry[offs].size)
-    //     {
-    //         *entry_offset_byte_rtn = char_offset;
-    //         return &buffer->entry[offs];
-    //     }
-    //     else
-    //     {
-    //         char_offset = char_offset - buffer->entry[offs].size;
-    //         offs = (offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
-    //     }
-    // }
-    // return NULL;
-    uint8_t fake_output_offset = buffer->out_offs;
-    if ((buffer->out_offs == buffer->in_offs) && (buffer->full == false))
+    uint8_t offs = buffer->in_offs;
+    for (int i = 0; i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++)
     {
-        return NULL;
-    }
-
-    while (char_offset > (buffer->entry[fake_output_offset].size - 1))
-    {
-        char_offset -= buffer->entry[fake_output_offset].size;
-        fake_output_offset++;
-        if (fake_output_offset == AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
+        if (char_offset < buffer->entry[offs].size)
         {
-            fake_output_offset = 0;
+            *entry_offset_byte_rtn = char_offset;
+            return &buffer->entry[offs];
         }
-        if (fake_output_offset == buffer->out_offs)
+        else
         {
-            return NULL;
+            char_offset = char_offset - buffer->entry[offs].size;
+            offs = (offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
         }
     }
-
-    *entry_offset_byte_rtn = char_offset;
-
-    return &(buffer->entry[fake_output_offset]);
+    return NULL;
 }
 
 /**
@@ -87,46 +64,16 @@ void aesd_circular_buffer_add_entry(
     struct aesd_circular_buffer *buffer,
     const struct aesd_buffer_entry *add_entry)
 {
-    // buffer->entry[buffer->in_offs] = *add_entry;
-    // buffer->in_offs =
-    //     (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+    buffer->entry[buffer->in_offs] = *add_entry;
+    buffer->in_offs =
+        (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
 
-    // if (buffer->full)
-    // {
-    //     buffer->out_offs =
-    //         (buffer->out_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
-    // }
+    if (buffer->full)
+    {
+        buffer->out_offs =
+            (buffer->out_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+    }
 
-    // if (buffer->in_offs == buffer->out_offs)
-    // {
-    //     buffer->full = true;
-    // }
-    if ((buffer->in_offs == buffer->out_offs) && (buffer->full == true))
-    {
-        /*
-         * Increment output location and check if it needs to be adjustment
-         */
-        buffer->out_offs++;
-        if (AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED == buffer->out_offs)
-        {
-            buffer->out_offs = 0;
-        }
-    }
-    if (buffer->entry[buffer->in_offs].buffptr)
-    {
-        kfree(buffer->entry[buffer->in_offs].buffptr);
-    }
-    buffer->entry[buffer->in_offs].buffptr = add_entry->buffptr;
-    buffer->entry[buffer->in_offs].size = add_entry->size;
-
-    /*
-     * Increment input location and check if it needs to be adjustment
-     */
-    buffer->in_offs++;
-    if (AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED == buffer->in_offs)
-    {
-        buffer->in_offs = 0;
-    }
     if (buffer->in_offs == buffer->out_offs)
     {
         buffer->full = true;
