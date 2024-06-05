@@ -59,7 +59,11 @@ aesd_circular_buffer_find_entry_offset_for_fpos(
     size_t char_offset,
     size_t *entry_offset_byte_rtn);
 
+<<<<<<< HEAD
 extern void aesd_circular_buffer_add_entry(
+=======
+extern const char *aesd_circular_buffer_add_entry(
+>>>>>>> tmp
     struct aesd_circular_buffer *buffer,
     const struct aesd_buffer_entry *add_entry);
 
