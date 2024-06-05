@@ -20,6 +20,8 @@
 #include "aesdchar.h"
 int aesd_major = 0; // use dynamic major
 int aesd_minor = 0;
+char *gbuf;
+int gidx;
 
 MODULE_AUTHOR("Your Name Here"); /** TODO: fill in your name **/
 MODULE_LICENSE("Dual BSD/GPL");
