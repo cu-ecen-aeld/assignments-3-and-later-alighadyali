@@ -216,7 +216,7 @@ int daemonize(int *p_socket_fd, struct sockaddr_storage *p_sock_addr_storage)
     dup2(nullFd, 1);
 
     // Start the timestamp thread.
-    // initTimestampHandler();
+    initTimestampHandler();
 
     // Begin accepting connections and exchanging data.
     initConnectionHandler(p_socket_fd, p_sock_addr_storage);
