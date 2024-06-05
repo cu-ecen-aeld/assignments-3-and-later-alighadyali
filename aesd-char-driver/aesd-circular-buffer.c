@@ -36,7 +36,8 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(
     size_t *entry_offset_byte_rtn)
 {
     uint8_t offs = buffer->in_offs;
-    for (int i = 0; i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++)
+    int i = 0;
+    while (i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
     {
         if (char_offset < buffer->entry[offs].size)
         {
@@ -48,6 +49,7 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(
             char_offset = char_offset - buffer->entry[offs].size;
             offs = (offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
         }
+        i++;
     }
     return NULL;
 }
@@ -60,10 +62,11 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(
  * add_entry must be allocated by and/or must have a lifetime managed by the
  * caller.
  */
-void aesd_circular_buffer_add_entry(
+const char* aesd_circular_buffer_add_entry(
     struct aesd_circular_buffer *buffer,
     const struct aesd_buffer_entry *add_entry)
 {
+    const char *replaced = buffer->entry[buffer->in_offs].buffptr;
     buffer->entry[buffer->in_offs] = *add_entry;
     buffer->in_offs =
         (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
@@ -78,6 +81,7 @@ void aesd_circular_buffer_add_entry(
     {
         buffer->full = true;
     }
+    return replaced;
 }
 
 /**
