@@ -16,7 +16,7 @@
 #include <pthread.h>
 
 #define PORT            "9000"
-#define BACKLOG         10
+#define BACKLOG         100
 #define FILENAME        "/tmp/aesdsocketdata"
 #define DEVICEPATH      "/dev/aesdchar"
 #define BUFFERSIZE      1024

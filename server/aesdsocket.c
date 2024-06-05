@@ -224,7 +224,7 @@ int daemonize(int *p_socket_fd, struct sockaddr_storage *p_sock_addr_storage)
     // After the program is done accepting connections (i.e. after a term signal
     // is received, start cleaning up.
     syslog(LOG_USER, "Closing connections and cleaning up.");
-    // remove(FILENAME);
+    remove(FILENAME);
 
     if (nullFd != -1)
     {
