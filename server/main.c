@@ -69,7 +69,7 @@ int main(int argc, char *argv[])
     syslog(LOG_USER, "Running in interactive mode.");
 
     // Begin accepting connections and data.
-    accept_connections(&socketFd, &sock_addr_storage);
+    init_connection_handler(&socketFd, &sock_addr_storage);
     syslog(LOG_USER, "Closing connections and cleaning up.");
 
     if (socketFd != -1)
