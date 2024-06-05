@@ -1,26 +1,20 @@
-# Makefile
+TARGET	?= aesdsocket
+CC		?= $(CROSS_COMPILE)gcc
+CFLAGS	?= -g -Wall -Werror
+SRC		= aesdsocket.c
+LDFLAGS ?= -lpthread -lrt
+CEXTRAFLAGS =
+USE_AESD_CHAR_DEVICE = 1
 
-CC ?= $(CROSS_COMPILE)gcc
-# Compiler flags
-CFLAGS ?= -Wall -Wextra -I.
 
-SRCS := $(wildcard *.c)
-OBJS := $(SRCS:.c=.o)
-LDFLAGS ?= -lpthread
-
-TARGET ?= aesdsocket
+ifeq ($(USE_AESD_CHAR_DEVICE),1)
+	CEXTRAFLAGS += -DUSE_AESD_CHAR_DEVICE
+endif
 
 all: $(TARGET)
 
-# Rule to build the target
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+$(TARGET) : $(SRC)
+	$(CC) $(CFLAGS) $(CEXTRAFLAGS) $^ -o $(TARGET) $(LDFLAGS)
 
-# Rule to compile source files
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
-
-# Phony target to clean up
-.PHONY: clean
 clean:
-	rm -f $(TARGET) $(OBJS)
+	-rm -f *.o $(TARGET)
