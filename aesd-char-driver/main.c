@@ -224,7 +224,8 @@ int aesd_init_module(void)
 void aesd_cleanup_module(void)
 {
     dev_t devno = MKDEV(aesd_major, aesd_minor);
-
+    uint8_t i = 0;
+    struct aesd_buffer_entry *entry = NULL;
     cdev_del(&aesd_device.cdev);
 
     /**
