@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <pthread.h>
+#include "aesd_ioctl.h"
 
 #define PORT            "9000"
 #define BACKLOG         100
@@ -41,3 +42,4 @@ void *exchange_data(void *pConnFd);
 int daemonize(int *p_socket_fd, struct sockaddr_storage *p_sock_addr_storage);
 void timestamp_handler();
 int init_timestamp_handler();
+void send_data(int connectionFd, FILE *data_file);
