@@ -157,7 +157,7 @@ int init_connection_handler(
             &sockAddrStorageSize);
         if (connectionFd == -1)
         {
-            syslog(LOG_ERR, "Eroor accepting connection.");
+            syslog(LOG_ERR, "Error accepting connection.");
             continue;
         }
         else
