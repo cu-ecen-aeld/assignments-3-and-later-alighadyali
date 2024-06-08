@@ -14,25 +14,14 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <pthread.h>
-#include "aesd_ioctl.h"
+#include "../aesd-char-driver/aesd_ioctl.h"
 
 #define PORT            "9000"
 #define BACKLOG         100
-#define FILENAME        "/tmp/aesdsocketdata"
+#define FILENAME        "/var/tmp/aesdsocketdata"
 #define DEVICEPATH      "/dev/aesdchar"
 #define BUFFERSIZE      1024
 #define TIMESTAMP_DELAY 10
-
-// pointers to file descriptors, structs and vars for socket management.
-typedef struct
-{
-    struct sockaddr_storage *p_sock_addr_storage;
-    socklen_t *p_sock_addr_storage_size;
-    struct addrinfo *p_hints;
-    struct addrinfo *p_addr_info;
-    int *p_socket_fd;
-    int *p_accept_connection_fd;
-} socket_context;
 
 void signal_handler(int signo);
 int init_signal_handler();
