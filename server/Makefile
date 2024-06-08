@@ -1,12 +1,10 @@
-# Makefile
-
 CC ?= $(CROSS_COMPILE)gcc
 # Compiler flags
 CFLAGS ?= -Wall -Wextra -I.
 
 SRCS := $(wildcard *.c)
 OBJS := $(SRCS:.c=.o)
-LDFLAGS ?= -lpthread
+LDFLAGS ?= -lpthread -lrt
 
 TARGET ?= aesdsocket
 

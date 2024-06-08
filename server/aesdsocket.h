@@ -1,45 +1,60 @@
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <netdb.h>
-#include <signal.h>
-#include <stdbool.h>
+#ifndef _AESDSOCKET_H_
+#define _AESDSOCKET_H_
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <syslog.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <syslog.h>
+#include <signal.h>
+#include <stdbool.h>
+#include <getopt.h>
 #include <sys/stat.h>
-#include <unistd.h>
+#include <fcntl.h>
+#include <malloc.h>
 #include <pthread.h>
-#include "aesd_ioctl.h"
+#include <sys/queue.h>
+#include <time.h>
+#include <unistd.h>
+#include <errno.h>
+#include "../aesd-char-driver/aesd_ioctl.h"
 
-#define PORT            "9000"
-#define BACKLOG         100
-#define FILENAME        "/tmp/aesdsocketdata"
-#define DEVICEPATH      "/dev/aesdchar"
-#define BUFFERSIZE      1024
-#define TIMESTAMP_DELAY 10
+#define USE_AESD_CHAR_DEVICE 1
 
-// pointers to file descriptors, structs and vars for socket management.
-typedef struct
+#define BUFFER_SIZE 1000000
+#define PORT        9000
+
+#ifdef USE_AESD_CHAR_DEVICE
+#define FILE_NAME "/dev/aesdchar"
+#else
+#define FILE_NAME "/var/tmp/aesdsocketdata"
+#endif
+
+extern int sockfd;
+extern FILE *file_ptr;
+
+struct ThreadInfo
 {
-    struct sockaddr_storage *p_sock_addr_storage;
-    socklen_t *p_sock_addr_storage_size;
-    struct addrinfo *p_hints;
-    struct addrinfo *p_addr_info;
-    int *p_socket_fd;
-    int *p_accept_connection_fd;
-} socket_context;
+    pthread_t thread_id;
+    int client_socket;
+    int thread_complete_flag;
+    struct sockaddr_in client_thread_addr;
+    socklen_t sin_thread_size;
+    SLIST_ENTRY(ThreadInfo) entries;
+};
 
-void signal_handler(int signo);
-int init_signal_handler();
-int init_connection_handler(
-    int *p_socket_fd, struct sockaddr_storage *p_sock_addr_storage);
-void *exchange_data(void *pConnFd);
-int daemonize(int *p_socket_fd, struct sockaddr_storage *p_sock_addr_storage);
-void timestamp_handler();
-int init_timestamp_handler();
-void send_data(int connectionFd, FILE *data_file);
+extern pthread_mutex_t thread_list_mutex;
+extern pthread_mutex_t file_mutex;
+
+size_t get_available_heap_size();
+
+void daemonize();
+
+void *handle_client_connection(void *arg);
+
+void sigint_handler(int signum);
+
+#endif

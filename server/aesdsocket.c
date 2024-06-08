@@ -1,291 +1,260 @@
 #include "aesdsocket.h"
 
-static struct sigaction sig_action = {0};
+int sockfd = 0;
+FILE *file_ptr = NULL;
+pthread_mutex_t thread_list_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// Flag set by SIGTERM and SIGINT to notify functions to stop what they're doing
-// and exit.
-static bool terminate = false;
-static pthread_mutex_t fmutex;
-
-void signal_handler(int signo)
+size_t get_available_heap_size()
 {
-    if (signo == SIGINT || signo == SIGTERM)
-    {
-        syslog(LOG_USER, "Caught termination signal. Exiting.");
-        terminate = true;
-    }
+    struct mallinfo mi = mallinfo();
+    size_t available_heap = mi.fordblks;
+
+    return available_heap;
 }
 
-int init_signal_handler()
+void daemonize()
 {
-    sig_action.sa_handler = signal_handler;
-    memset(&sig_action.sa_mask, 1, sizeof(sig_action.sa_mask));
-    if (sigaction(SIGINT, &sig_action, NULL) != 0)
+    pid_t pid, sid;
+
+    pid = fork();
+    if (pid < 0)
     {
-        perror("sigaction");
-        syslog(LOG_ERR, "sigaction failed for SIGINT.");
-        return -1;
+        exit(EXIT_FAILURE);
     }
 
-    if (sigaction(SIGTERM, &sig_action, NULL) != 0)
+    if (pid > 0)
     {
-        perror("sigaction");
-        syslog(LOG_ERR, "sigaction failed for SIGTERM.");
-        return -1;
+        exit(EXIT_SUCCESS); // Parent process exits
     }
-    syslog(LOG_USER, "Signal handler setup succeeded.");
-    return 0;
+
+    umask(0); // Set file permissions
+
+    sid = setsid(); // Create a new session
+    if (sid < 0)
+    {
+        exit(EXIT_FAILURE);
+    }
+
+    // Close standard file descriptors
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    close(STDERR_FILENO);
 }
 
-void timestamp_handler()
+void *handle_client_connection(void *arg)
 {
-    while (true)
+
+    bool ioctrl_tracker = false;
+    struct ThreadInfo *info = (struct ThreadInfo *)arg;
+    int client_sock = info->client_socket;
+    struct sockaddr_in client_addr = info->client_thread_addr;
+    // socklen_t sin_thread_size_local = info->sin_thread_size;
+    char client_ip[INET_ADDRSTRLEN];
+    struct aesd_seekto seek_data_from_server;
+    // Receive data and append to file
+    file_ptr = fopen(FILE_NAME, "w+");
+    if (file_ptr == NULL)
     {
-        pthread_mutex_lock(&fmutex);
-        if (terminate)
-        {
-            pthread_mutex_unlock(&fmutex);
-            return;
-        }
-        FILE *dataFile = fopen(DEVICEPATH, "w");
-        if (dataFile == NULL)
-        {
-            perror("fopen");
-            syslog(LOG_ERR, "Failed to open data file.");
-            pthread_mutex_unlock(&fmutex);
-            sleep(TIMESTAMP_DELAY);
-            continue;
-        }
-
-        time_t now = time(NULL);
-        struct tm *pTimeData = localtime(&now);
-        char timestamp[64];
-        strftime(
-            timestamp,
-            sizeof(timestamp),
-            "timestamp:%Y-%m-%d %H:%M:%S\n",
-            pTimeData);
-
-        fprintf(dataFile, "%s", timestamp);
-        fclose(dataFile);
-        pthread_mutex_unlock(&fmutex);
-
-        sleep(TIMESTAMP_DELAY);
+        perror("fopen");
+        close(client_sock);
+        // return -1;
     }
-    return;
-}
+    pthread_mutex_lock(&file_mutex);
+    char *buffer = (char *)malloc(BUFFER_SIZE * sizeof(char));
+    memset(buffer, 0, BUFFER_SIZE * sizeof(char));
+    size_t available_heap = get_available_heap_size();
+    pthread_mutex_unlock(&file_mutex);
 
-int init_timestamp_handler()
-{
-    pthread_t timestamp_thread;
-    if (pthread_create(
-            &timestamp_thread, NULL, (void *)timestamp_handler, NULL) < 0)
+    // Log the accepted connection to syslog with client IP address
+    inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET_ADDRSTRLEN);
+    syslog(LOG_INFO, "Accepted connection from %s", client_ip);
+
+    ssize_t total_received = 0;
+    ssize_t bytes_received;
+    char *ptr = NULL;
+    pthread_mutex_lock(&file_mutex);
+
+    while ((bytes_received = recv(client_sock, buffer, BUFFER_SIZE - 1, 0)) > 0)
     {
-        perror("Timestamp thread failed");
-        return -1;
-    }
-    return 0;
-}
-
-void send_data(int connectionFd, FILE *data_file)
-{
-    ssize_t bytesRead = 0;
-    char buffer[BUFFERSIZE];
-
-    while ((bytesRead = read(fileno(data_file), buffer, 1)) > 0)
-    {
-        if ((send(connectionFd, buffer, bytesRead, 0)) != bytesRead)
+        if ((total_received > available_heap))
         {
             syslog(
-                LOG_ERR, "Error sending file contents over socket connection.");
-            return;
+                LOG_INFO,
+                "Packet too large for available heap, closing connection");
+            fclose(file_ptr);
+            close(client_sock);
+            free(buffer);
+            buffer = NULL;
+            return NULL;
         }
-    }
-}
-
-void *exchange_data(void *pConnFd)
-{
-    int connectionFd = *((int *)pConnFd);
-    pthread_mutex_lock(&fmutex);
-    FILE *data_file = fopen(DEVICEPATH, "w");
-    if (!data_file)
-    {
-        syslog(LOG_ERR, "Unable to open file for writing.");
-        pthread_mutex_unlock(&fmutex);
-        return 0;
-    }
-
-    size_t bytes_received = 0;
-    char buffer[BUFFERSIZE];
-
-    // while ((bytesReceived = recv(connectionFd, buffer, sizeof(buffer), 0)) >
-    // 0)
-    // {
-    //     fwrite(buffer, 1, bytesReceived, dataFile);
-    //     if (memchr(buffer, '\n', bytesReceived) != NULL)
-    //     {
-    //         break;
-    //     }
-    // }
-    // fclose(dataFile);
-
-    // // Send back the contents of the file to the client.
-    // ssize_t bytesRead = 0;
-    // dataFile = fopen(DEVICEPATH, "r");
-    // if (!dataFile)
-    // {
-    //     syslog(LOG_ERR, "Error opening data file.");
-    //     return 0;
-    // }
-
-    // // Reset buffer and start sending.
-    // memset(buffer, 0, sizeof(buffer));
-    // while ((bytesRead = fread(buffer, 1, sizeof(buffer), dataFile)))
-    // {
-    //     if ((send(connectionFd, buffer, bytesRead, 0)) != bytesRead)
-    //     {
-    //         syslog(
-    //             LOG_ERR, "Error sending file contents over socket
-    //             connection.");
-    //         return 0;
-    //     }
-    // }
-
-    while ((bytes_received = recv(connectionFd, buffer, sizeof(buffer), 0)) > 0)
-    {
-        if (memchr(buffer, '\n', bytes_received) != NULL)
+        ptr = strchr(buffer, '\n');
+        if (ptr != NULL)
         {
-            if (strstr(buffer, "AESDCHAR_IOCSEEKTO"))
-            {
-                syslog(LOG_USER, "Found ioctl command");
-                struct aesd_seekto cmd;
-                sscanf(
-                    buffer,
-                    "AESDCHAR_IOCSEEKTO:%u,%u",
-                    &cmd.write_cmd,
-                    &cmd.write_cmd_offset);
-                syslog(
-                    LOG_DEBUG,
-                    "Command %u,%u",
-                    cmd.write_cmd,
-                    cmd.write_cmd_offset);
-                ioctl(fileno(data_file), AESDCHAR_IOCSEEKTO, &cmd);
-                send_data(connectionFd, data_file);
-                break;
-            }
-            // If not ioctl command is found, write to file, set fpos to 0, and
-            // send the contents back to the client.
-            write(fileno(data_file), buffer, bytes_received);
-            rewind(data_file);
-            send_data(connectionFd, data_file);
             break;
         }
+        total_received += bytes_received;
     }
 
-    fclose(data_file);
-    pthread_mutex_unlock(&fmutex);
-    return 0;
-}
-
-int init_connection_handler(
-    int *p_socket_fd, struct sockaddr_storage *p_sock_addr_storage)
-{
-    socklen_t sockAddrStorageSize = sizeof(*p_sock_addr_storage);
-    while (1)
+    char *start_of_command = strstr(buffer, "AESDCHAR_IOCSEEKTO:");
+    if (start_of_command != NULL)
     {
-        if (terminate)
+        ioctrl_tracker = true;
+        sscanf(
+            start_of_command,
+            "AESDCHAR_IOCSEEKTO:%u,%u",
+            &seek_data_from_server.write_cmd,
+            &seek_data_from_server.write_cmd_offset);
+        char *end_of_command = strchr(start_of_command, '\n');
+        if (end_of_command != NULL)
         {
-            // A termination signal was sent. Immediately break out of this loop
-            // and exit the function.
-            return 0;
-        }
-
-        pthread_t threadId;
-        int connectionFd = accept(
-            *p_socket_fd,
-            (struct sockaddr *)p_sock_addr_storage,
-            &sockAddrStorageSize);
-        if (connectionFd == -1)
-        {
-            syslog(LOG_ERR, "Error accepting connection.");
-            continue;
+            end_of_command++; // move past the newline
         }
         else
         {
-            syslog(LOG_USER, "Accepted connection.");
+            end_of_command =
+                start_of_command +
+                strlen("AESDCHAR_IOCSEEKTO:"); // just move past the command if
+                                               // no newline is found
+        }
+        char *dest = start_of_command;
+        char *src = end_of_command;
+        while (*src)
+        {
+            *dest = *src;
+            dest++;
+            src++;
+        }
+        *dest = '\0'; // Null-terminate the string
+        total_received -=
+            (end_of_command -
+             start_of_command); // adjust the total_received count
+        *start_of_command = '\0';
+        *end_of_command = '\0';
+        *src = '\0';
+    }
 
-            if (pthread_create(
-                    &threadId, NULL, exchange_data, (void *)&connectionFd) < 0)
-            {
-                perror("pthread_create");
-                syslog(
-                    LOG_ERR,
-                    "Unable to create thread while accepting connection.");
-                return -1;
-            }
-            pthread_join(threadId, NULL);
+    // if (ioctrl_tracker == false)
+    //{
+    fprintf(file_ptr, "%s", buffer);
+    fseek(file_ptr, 0, SEEK_END);
+    long file_size = ftell(file_ptr);
+    fseek(file_ptr, 0, SEEK_SET);
+    //}
+    // Allocate memory for the file contents (+1 for null-terminator)
+    char *file_contents = (char *)malloc(file_size + 1);
+    if (!file_contents)
+    {
+        perror("malloc");
+        pthread_mutex_unlock(&file_mutex);
+        free(buffer);
+        buffer = NULL;
+        return NULL;
+    }
+    else
+    {
+        memset(file_contents, 0, sizeof(file_contents));
+    }
+
+    if (ioctrl_tracker == true)
+    {
+        syslog(
+            LOG_INFO,
+            "Encoded seek data: write_cmd = %u, write_cmd_offset = %u",
+            seek_data_from_server.write_cmd,
+            seek_data_from_server.write_cmd_offset);
+        int file_descriptor = fileno(file_ptr);
+        if (file_descriptor == -1)
+        {
+            // Handle the error, e.g., print to syslog and exit
+            syslog(LOG_ERR, "Error getting file descriptor: %m");
+            fclose(file_ptr); // Close the file if it's open
+            exit(EXIT_FAILURE);
+        }
+        // Get the ioctl command number
+        unsigned int ioctlCommand = _IOC_NR(AESDCHAR_IOCSEEKTO);
+        // Get the ioctl command type
+        unsigned int ioctlType = _IOC_TYPE(AESDCHAR_IOCSEEKTO);
+        // Log the ioctl command type to syslog
+        syslog(LOG_INFO, "IOCTL Command Type: %u", ioctlType);
+        // Log the ioctl command number to syslog
+        syslog(LOG_INFO, "IOCTL Command Number: %u", ioctlCommand);
+        syslog(LOG_INFO, "ioctl command: %ld", AESDCHAR_IOCSEEKTO);
+        syslog(LOG_INFO, "launching ioctl call..");
+        ioctlCommand = 0;
+        ioctlType = 0;
+        if (ioctl(
+                file_descriptor, AESDCHAR_IOCSEEKTO, &seek_data_from_server) ==
+            -1)
+        {
+            // if(ioctl(file_descriptor, AESDCHAR_IOCSEEKTO,
+            // &seek_data_from_server) == -1) {
+            syslog(LOG_ERR, "ioctl exploded");
+            // syslog(LOG_ERR, "ioctl failed: %s", strerror(errno));
+            syslog(
+                LOG_ERR, "ioctl failed: %s (errno=%d)", strerror(errno), errno);
+        }
+        else
+        {
+            long position = ftell(file_ptr);
+            syslog(
+                LOG_INFO, "Current file position after ioctl: %ld", position);
+            syslog(
+                LOG_INFO,
+                "ioctrl_tracker true, write_cmd: %u, write_cmd_offset: %u",
+                seek_data_from_server.write_cmd,
+                seek_data_from_server.write_cmd_offset);
+        }
+        file_descriptor = 0;
+    }
+    else
+    {
+        syslog(
+            LOG_INFO,
+            "ioctrl_tracker false, write_cmd: %u, write_cmd_offset: %u",
+            seek_data_from_server.write_cmd,
+            seek_data_from_server.write_cmd_offset);
+    }
+
+    size_t bytes_read;
+    // while ((bytes_read = fread(buffer, 1, sizeof(buffer), file_ptr)) > 0) {
+    while ((bytes_read = fread(file_contents, 1, file_size, file_ptr)) > 0)
+    {
+        ssize_t bytes_sent = send(client_sock, file_contents, bytes_read, 0);
+        // printf("Sent %zu bytes to client.\n", bytes_sent);
+        if (bytes_sent == -1)
+        {
+            perror("send");
+            pthread_mutex_unlock(&file_mutex);
+            free(buffer);
+            buffer = NULL;
+            free(file_contents);
+            file_contents = NULL;
+            break;
         }
     }
-    return 0;
+    pthread_mutex_unlock(&file_mutex);
+
+    fclose(file_ptr);
+
+    // Log closed connection to syslog
+    syslog(LOG_INFO, "Closed connection from %s", client_ip);
+    close(client_sock);
+    memset(buffer, 0, BUFFER_SIZE * sizeof(char));
+    free(buffer);
+    buffer = NULL;
+    free(file_contents);
+    file_contents = NULL;
+    info->thread_complete_flag = 1;
+    pthread_exit(NULL);
 }
 
-int daemonize(int *p_socket_fd, struct sockaddr_storage *p_sock_addr_storage)
+void sigint_handler(int signum)
 {
-    pid_t pid = fork();
-    if (pid == -1)
-    {
-        syslog(LOG_ERR, "Unable to fork.");
-        perror("fork");
-        return -1;
-    }
-    else if (pid != 0)
-    {
-        syslog(LOG_USER, "Running in daemon mode.");
-        exit(EXIT_SUCCESS);
-    }
-
-    // Create new session and process group.
-    if (setsid() == -1)
-    {
-        syslog(LOG_ERR, "setsid failed after fark.");
-        perror("setsid");
-        return -1;
-    }
-
-    // CHILD PROCESS STARTED
-    // Set the working directory of child processto the root directory.
-    if (chdir("/") == -1)
-    {
-        syslog(LOG_ERR, "chdir failed after fork.");
-        perror("chdir");
-        return -1;
-    }
-
-    // Redirect fds to /dev/null
-    int nullFd = open("/dev/null", O_WRONLY | O_CREAT, 0666);
-    dup2(nullFd, 1);
-
-    // Start the timestamp thread.
-    // initTimestampHandler();
-
-    // Begin accepting connections and exchanging data.
-    init_connection_handler(p_socket_fd, p_sock_addr_storage);
-
-    // After the program is done accepting connections (i.e. after a term signal
-    // is received, start cleaning up.
-    syslog(LOG_USER, "Closing connections and cleaning up.");
-    remove(FILENAME);
-
-    if (nullFd != -1)
-    {
-        close(nullFd);
-    }
-
-    if (*p_socket_fd != -1)
-    {
-        close(*p_socket_fd);
-    }
-
+    syslog(LOG_INFO, "Caught signal, exiting");
+    fclose(file_ptr);
+    close(sockfd);
+    unlink(FILE_NAME); // Delete the file
     closelog();
     exit(EXIT_SUCCESS);
 }
