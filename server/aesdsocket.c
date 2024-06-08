@@ -33,7 +33,7 @@ bool terminate = false;
 
 void signalHandler(int signo) {
     if(signo == SIGINT || signo == SIGTERM) {
-        syslog(LOG_USER, "Caught termination signal. Exiting.");
+        syslog(LOG_USER, "Caught termination signal. Exitin.");
         terminate = true;
     }
 }
