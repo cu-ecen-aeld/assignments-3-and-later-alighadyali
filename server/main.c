@@ -67,6 +67,9 @@ int main(int argc, char *argv[])
     // Running interactively (not as a daemon).
     syslog(LOG_USER, "Running in interactive mode.");
 
+    // Start the timestamp thread.
+    // init_timestamp_handler();
+
     // Begin accepting connections and data.
     init_connection_handler(&socketFd, &sock_addr_storage);
     syslog(LOG_USER, "Closing connections and cleaning up.");
