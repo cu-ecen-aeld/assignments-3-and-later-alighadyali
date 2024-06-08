@@ -1,81 +1,113 @@
 #include "aesdsocket.h"
 
+SLIST_HEAD(ThreadList, ThreadInfo) thread_list = SLIST_HEAD_INITIALIZER(thread_list);
+
 int main(int argc, char *argv[])
 {
-    openlog(NULL, 0, LOG_USER);
-    struct sockaddr_storage sock_addr_storage;
-    struct addrinfo hints, *p_addr_info;
-    int socketFd;
+    struct sockaddr_in server_addr, client_addr;
 
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
+    openlog("aesdsocket_server", LOG_CONS | LOG_PID, LOG_USER);
 
-    bool runAsDaemon = false;
-    openlog(NULL, 0, LOG_USER);
+    bool daemon_mode = false;
 
-    for (int i = 1; i < argc; i++)
+    // Parse command-line arguments
+    int opt;
+    while ((opt = getopt(argc, argv, "d")) != -1)
     {
-        if (strstr(argv[i], "-d"))
+        switch (opt)
         {
-            runAsDaemon = true;
+        case 'd':
+            daemon_mode = true;
             break;
+        default:
+            fprintf(stderr, "Usage: %s [-d]\n", argv[0]);
+            exit(EXIT_FAILURE);
         }
     }
 
-    // Initialize the signal handler.
-    if (init_signal_handler() == -1)
+    // Daemonize if in daemon mode
+    if (daemon_mode)
     {
-        return -1;
+        daemonize();
     }
 
-    // Used to get network and host information for socket binding and
-    // listening.
-    getaddrinfo(NULL, PORT, &hints, &p_addr_info);
-
-    socketFd = socket(
-        p_addr_info->ai_family,
-        p_addr_info->ai_socktype,
-        p_addr_info->ai_protocol);
-
-    if (socketFd == -1)
+    // Create a socket
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd == -1)
     {
-        freeaddrinfo(p_addr_info);
-        syslog(LOG_ERR, "Error creating socket");
+        perror("socket");
         exit(EXIT_FAILURE);
     }
 
-    if (bind(socketFd, p_addr_info->ai_addr, p_addr_info->ai_addrlen) == -1)
+    int enable = 1;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
     {
-        syslog(LOG_ERR, "Could not bind socket to address.");
-        freeaddrinfo(p_addr_info);
+        perror("setsockopt(SO_REUSEADDR) failed");
+    }
+
+    // Set up the server address structure
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(PORT);
+
+    // Bind the socket to the specified PORT
+    if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) ==
+        -1)
+    {
+        perror("bind");
+        close(sockfd);
         exit(EXIT_FAILURE);
     }
 
-    freeaddrinfo(p_addr_info);
-
-    if (listen(socketFd, BACKLOG) == -1)
+    // Listen for incoming connections
+    if (listen(sockfd, 5) == -1)
     {
-        syslog(LOG_ERR, "Could not invoke listen on socket.");
+        perror("listen");
+        close(sockfd);
+        exit(EXIT_FAILURE);
     }
 
-    if (runAsDaemon)
+    socklen_t client_addr_len = sizeof(client_addr);
+
+    signal(SIGINT, sigint_handler);
+    signal(SIGTERM, sigint_handler);
+
+    while (1)
     {
-        daemonize(&socketFd, &sock_addr_storage);
+        // Accept a connection
+        int client_sock =
+            accept(sockfd, (struct sockaddr *)&client_addr, &client_addr_len);
+        if (client_sock == -1)
+        {
+            perror("accept");
+            continue;
+        }
+
+        struct ThreadInfo *info =
+            (struct ThreadInfo *)malloc(sizeof(struct ThreadInfo));
+        if (info == NULL)
+        {
+            perror("Thread memory allocation error");
+            close(client_sock);
+            continue;
+        }
+        info->client_socket = client_sock;
+        info->sin_thread_size = sizeof(client_addr);
+        info->client_thread_addr = client_addr;
+        info->thread_complete_flag = 0;
+
+        pthread_create(&info->thread_id, NULL, handle_client_connection, info);
+
+        // Insert the thread's info into the linked list
+        pthread_mutex_lock(&thread_list_mutex);
+        SLIST_INSERT_HEAD(&thread_list, info, entries);
+        pthread_mutex_unlock(&thread_list_mutex);
+
+        // cleanup_threads(timer_thread);
     }
 
-    // Running interactively (not as a daemon).
-    syslog(LOG_USER, "Running in interactive mode.");
+    // The signal handler will handle the cleanup
 
-    // Begin accepting connections and data.
-    init_connection_handler(&socketFd, &sock_addr_storage);
-    syslog(LOG_USER, "Closing connections and cleaning up.");
-
-    if (socketFd != -1)
-    {
-        close(socketFd);
-    }
-    closelog();
-    exit(EXIT_SUCCESS);
+    return 0;
 }

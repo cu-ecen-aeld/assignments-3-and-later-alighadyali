@@ -1,9 +1,15 @@
 #!/bin/sh
-echo $1
-if [ $1 = 'start' ]; then
-    echo 'Starting'
-    start-stop-daemon -S -n aesdsocket -a /usr/bin/aesdsocket -- -d
-elif [ $1 = 'stop' ]; then
-    echo 'Stopping'
-    start-stop-daemon -K -n aesdsocket
-fi
+case "$1" in
+start)
+    echo -n "Starting aesdsocket daemon "
+    start-stop-daemon -S -n aesdsocket -a /usr/bin/aesdsocket -- -d && echo " -  Sucessfully started" || echo " -  Failed to start"
+    ;;
+stop)
+    echo -n "Stopping aesdsocket daemon "
+    start-stop-daemon -K -n aesdsocket -a /usr/bin/aesdsocket && echo " -  Sucessfully stopped" || echo " -  Failed to stop"
+    ;;
+*)
+    echo "Usage $0 {start|stop}"
+    exit 1
+    ;;
+esac

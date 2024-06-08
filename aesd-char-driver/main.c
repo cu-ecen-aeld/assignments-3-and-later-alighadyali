@@ -17,12 +17,14 @@
 #include <linux/types.h>
 #include <linux/cdev.h>
 #include <linux/fs.h> // file_operations
+#include <linux/slab.h>
+#include <linux/uaccess.h>
 #include "aesdchar.h"
 #include "aesd_ioctl.h"
 int aesd_major = 0; // use dynamic major
 int aesd_minor = 0;
 
-MODULE_AUTHOR("Your Name Here"); /** TODO: fill in your name **/
+MODULE_AUTHOR("AG"); /** TODO: fill in your name **/
 MODULE_LICENSE("Dual BSD/GPL");
 
 struct aesd_dev aesd_device;
@@ -53,10 +55,10 @@ ssize_t aesd_read(
     struct aesd_dev *dev;
     struct aesd_buffer_entry *p_entry;
     size_t entry_offset = 0;
-    PDEBUG("read %zu bytes with offset %lld", count, *f_pos);
     /**
      * TODO: handle read
      */
+    // Check input
     if ((filp == NULL) || (f_pos == NULL))
     {
         return -EINVAL;
@@ -70,7 +72,7 @@ ssize_t aesd_read(
     dev = filp->private_data;
     if (dev == NULL)
     {
-        printk("Null dev struct\n");
+        printk("Encountered null device structure.\n");
         return -EINVAL;
     }
     // Setup locking
@@ -83,7 +85,6 @@ ssize_t aesd_read(
 
     if (p_entry == NULL)
     {
-        PDEBUG("Position greather than buffer size");
         goto done;
     }
 
@@ -117,6 +118,8 @@ ssize_t aesd_write(
     /**
      * TODO: handle write
      */
+
+    // Check input
     if ((filp == NULL) || (f_pos == NULL))
     {
         return -EINVAL;
@@ -361,7 +364,6 @@ void aesd_cleanup_module(void)
     printk("Freed buffers \n");
     mutex_destroy(&aesd_device.lock);
     printk("Destroyed mutexss \n");
-
     unregister_chrdev_region(devno, 1);
 }
 
